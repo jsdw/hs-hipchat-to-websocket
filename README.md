@@ -1,0 +1,1 @@
+An adaptor which makes it easy to connect a websocket based chat system with hipchats APIV2.

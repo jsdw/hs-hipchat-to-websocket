@@ -15,12 +15,13 @@ cabal-version:       >=1.10
 
 executable HipchatToWebsocket
   main-is:             Main.hs
-  extensions:          OverloadedStrings,
+  default-extensions:  OverloadedStrings,
                        ScopedTypeVariables,
                        TemplateHaskell 
   build-depends:       base >=4.8 && <4.9,
                        websockets == 0.9.3.*, 
                        text == 1.2.*, 
+                       text-format == 0.3.*,
                        mtl == 2.2.*,
                        unix >= 2.7 && < 3.0,
                        network == 2.6.0.*,
@@ -32,6 +33,7 @@ executable HipchatToWebsocket
                        data-default == 0.5.*,
                        transformers == 0.4.3.*,
                        wreq-sb == 0.4.*,
+                       wai-extra == 3.0.7.*,
                        attoparsec == 0.12.*,
                        scotty == 0.9.*
   hs-source-dirs:      src

@@ -2,17 +2,20 @@ module App.Format (
 
     module Data.Text.Format,
     printLn,
-    formatLn
+    formatLn,
 
 ) where
 
-import           Prelude               hiding (print)
+import           Prelude                  hiding (print)
 import           Data.Text.Format
-import           Data.Text.Buildable   as B
-import qualified Data.ByteString       as BS
-import qualified Data.ByteString.Lazy  as BL
-import           Data.Text.Encoding    (decodeUtf8)
-import           Data.Monoid           ((<>))
+import           Data.Text.Format.Params
+import           Data.Text.Buildable      as B
+import qualified Data.ByteString          as BS
+import qualified Data.ByteString.Lazy     as BL
+import           Data.Text.Encoding       (decodeUtf8)
+import           Data.Monoid              ((<>))
+import           Control.Monad.Trans      (MonadIO(..))
+
 
 --make instances for bytestring as well to be printed, assuming UTF8 encoded.
 --efficiency not important, just making it easier to print and inspect output.

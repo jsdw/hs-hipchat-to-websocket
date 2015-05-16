@@ -19,13 +19,16 @@
 
 --import qualified Data.ByteString.Lazy.Char8  as BL
 
+-- {-# LANGUAGE NoMonomorphismRestriction #-}
+
 import           Prelude              hiding (print)
 import qualified Network.WebSockets   as WS
 import           Network.Wreq         as R
 import           Control.Lens         hiding ((.=))
 import           Control.Concurrent 
+import           Control.Exception    as E
 import           Control.Monad
-import           Control.Monad.Trans  (liftIO)
+import           Control.Monad.Trans  (MonadIO(..))
 import           Data.Aeson.Lens
 import           Data.Aeson           ((.=),object,Value,toJSON,encode)
 import qualified Web.Scotty           as W
@@ -40,6 +43,7 @@ import           Network.Wai.Middleware.RequestLogger
 
 import           App.GetParams
 import           App.Format           (print, printLn, formatLn, Only(..))
+import           App.Channel
 
 
 main = do
@@ -154,15 +158,14 @@ main = do
 
             --start a websocket client for our new bot:
             printLn "Starting socket server pointed at {}:{}" (bot^.botAddress, bot^.botPort)
-            (m_in,m_out) <- liftIO $ startSocketClient (T.unpack $ bot^.botAddress) (bot^.botPort)
-            printLn "Socket server started" ()
+            (m_in,m_out) <- startSocketClient (T.unpack $ bot^.botAddress) (bot^.botPort)
 
             --add sending mvar to list so that webhooks can use:
             liftIO $ modifyMVar_ sendersByOauth $ \arr -> return ((oauthId,m_out):arr) 
 
             --handle messages coming in here. expect room and message else ignore:
             liftIO $ forkIO $ forever $ do
-                msgData <- takeMVar m_in
+                msgData <- m_in
                 auth <- readMVar authToken
 
                 case (msgData ^? key "message" . _String, msgData ^? key "room" . _String) of
@@ -170,7 +173,6 @@ main = do
 
                         printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
 
-                        T.putStrLn $ "server_message ("<>room<>"): "<>msg
                         let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
                         R.postWith (R.defaults & param "auth_token" .~ [auth]) url $ toJSON $ object [
                                 "message" .= msg, 
@@ -201,7 +203,7 @@ main = do
             -- lookup socket client by oauthId and send message to it if possible
             senders <- liftIO $ readMVar sendersByOauth
             liftIO $ case lookup oauthId senders of
-                Just m_out -> putMVar m_out $ encode $ object [
+                Just m_out -> m_out $ encode $ object [
                         "room" .= room,
                         "message" .= msg,
                         "name" .= mMentionName
@@ -215,27 +217,35 @@ main = do
     return ()
 
 
-
 -- kick off a socket client, giving back mvars for
--- message passing. doesnt do anything fancy
-startSocketClient address port = do
+-- message passing. tries to reestablish link if its lost
+startSocketClient address port = liftIO $ do
 
-    (message_in :: MVar BL.ByteString) <- newEmptyMVar
-    (message_out :: MVar BL.ByteString) <- newEmptyMVar
+    (in_read :: IO BL.ByteString, in_write) <- makeChan
+    (out_read :: IO BL.ByteString, out_write) <- makeChan
 
-    forkIO $ WS.runClient address port "/" $ \conn -> do
+    let runConnection = WS.runClient address port "/" $ \conn -> do
+            liftIO $ forkIO $ forever $ do
+                resp <- WS.receiveData conn
+                in_write resp
+            forever $ do
+                m <- out_read
+                WS.sendTextData conn m
 
-        liftIO $ forkIO $ forever $ do
-            resp <- WS.receiveData conn
-            putMVar message_in resp
+        -- loop catching *any* (should limit scope more) exception and retrying.
+        -- allows bots to be taken offline/tweaked without this program needing a restart.
+        connectionLoop = runConnection `E.catches` [ E.Handler $ \(err :: SomeException) -> handleError ]
+          where
+            handleError = do
+                printLn "connection issue with client at {}:{}, attempting reconnect in 10s" (address, port)
+                threadDelay 10000000
+                connectionLoop
 
-        forever $ do
-            m <- takeMVar message_out
-            WS.sendTextData conn m
+    forkIO $ connectionLoop
 
-    return (message_in, message_out)
-
-
+    --return means to read messages coming from socket,
+    --and write messages back to the socket
+    return (in_read, out_write)
 
 
 

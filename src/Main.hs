@@ -1,26 +1,3 @@
---import qualified Network.WebSockets   as WS
---import           Network.Socket       (withSocketsDo) --only really necessary for windows
---import           Data.Text            (Text)
---import qualified Data.Text            as T
---import qualified Data.Text.IO         as T
---import           Data.Default         (Default, def)
---import           Control.Concurrent 
---import           Control.Applicative  ((<|>),(<$>),(<*>))
---import           Control.Monad.Trans  (liftIO)
---import           Control.Monad        (forever, forM_, forM)
---import           System.Environment   (getArgs)
---import           Text.Read            (readMaybe)
---import qualified Data.Map             as M
---import           Data.Monoid          ((<>))
---import           Data.List            (lookup,any)
---import           Data.Aeson           ((.=),object,encode,decode,toJSON)
---import qualified System.IO            as IO
---import           System.Posix.Signals (installHandler, Handler(Catch), sigINT, sigTERM)
-
---import qualified Data.ByteString.Lazy.Char8  as BL
-
--- {-# LANGUAGE NoMonomorphismRestriction #-}
-
 import           Prelude              hiding (print)
 import qualified Network.WebSockets   as WS
 import           Network.Wreq         as R
@@ -75,7 +52,6 @@ main = do
         W.get "/:botid" $ do
 
             bot <- lookupBot 
-            printLn "bot homepage reached: {}" (Only $ bot^.botName)
             W.text $ formatLn "bot homepage reached for {}\n\nGo to /{}/capabilities for more" (bot^.botName, bot^.botId)
 
         -- return the bot capabilities descriptor
@@ -141,7 +117,7 @@ main = do
             let hipchatApiUrl = caps ^?! responseBody . key "capabilities" . key "hipchatApiProvider" . key "url" . _String
                 tokenUrl = caps ^?! responseBody . key "capabilities" . key "oauth2Provider" . key "tokenUrl" . _String
 
-            printLn "Installing {} for {}" (bot^.botName, hipchatApiUrl)
+            printLn "Installing {}" (Only bot^.botName)
 
             -- fork a thread to handle keeping the token refreshed
             authToken <- liftIO $ newEmptyMVar

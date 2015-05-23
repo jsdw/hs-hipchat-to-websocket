@@ -3,6 +3,7 @@ module App.GetParams (
     -- types
     Params,
     BotParams,
+    ParamFailure,
 
     -- param lenses
     thisAddress,
@@ -27,7 +28,8 @@ import           Text.Read            (readMaybe)
 import qualified Data.ByteString      as B
 import           Control.Applicative
 import           Control.Monad
-import qualified Control.Monad.Except as E
+import           Control.Monad.Trans  (liftIO)
+import           Control.Monad.Catch  (Exception, MonadThrow, throwM, toException)
 import           Data.Default         (Default, def)
 import           Data.Monoid          ((<>))
 import qualified Data.Map             as M
@@ -70,18 +72,34 @@ instance Default Params where
     }
 
 --
+-- A little quick error type to represent param extraction failure.
+-- playing with MonadThrow to give the caller a choice in what shape
+-- failure takes
+--
+data ParamFailure = ParamFailure String
+instance Exception ParamFailure
+instance Show ParamFailure where show (ParamFailure s) = "Param extraction failure: " <> s
+paramError str = throwM $ toException $ ParamFailure str
+
+--
 -- extract params from bots.conf into structures declared above.
 -- return Left err if error, else Right Params
 --
-getParams :: IO (Either String Params)
-getParams = E.runExceptT $ do
+
+getParams :: MonadThrow m => IO (m Params)
+getParams = do
 
     --read bots.conf as UTF8
-    conf <- fmap decodeUtf8 $ E.liftIO $ B.readFile "bots.conf"
+    conf <- fmap decodeUtf8 $ liftIO $ B.readFile "bots.conf" 
+    return $ getParams' conf
+
+
+getParams' :: MonadThrow m => T.Text -> m Params
+getParams' conf = do
 
     --attempt to parse, err if fail
     (topParams, subParamList) <- case parseConf conf of
-        Left err -> E.throwError err
+        Left err -> paramError err
         Right p -> return p
 
     --extract top level params
@@ -90,7 +108,7 @@ getParams = E.runExceptT $ do
     _tPort <- getParam "port" topParams "'port' param not found"
     tPort <- toInt _tPort "global port not an int"
 
-    _tLogLevel <- getParam "loglevel" topParams "'port' param not found"
+    _tLogLevel <- getParamDef "loglevel" topParams "10"
     tLogLevel <- toInt _tLogLevel "loglevel not an int"
 
     --extract params for each bot
@@ -114,7 +132,7 @@ getParams = E.runExceptT $ do
 
 getParam str map err = case M.lookup str map of
     Just val -> return val
-    Nothing -> E.throwError err
+    Nothing -> paramError err
 
 getParamDef str map def = case M.lookup str map of
     Just val -> return val
@@ -122,7 +140,7 @@ getParamDef str map def = case M.lookup str map of
 
 toInt val err = case readMaybe (T.unpack val) of
     Just v -> return v
-    Nothing -> E.throwError err
+    Nothing -> paramError err
 
 
 

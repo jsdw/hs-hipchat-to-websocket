@@ -1,9 +1,10 @@
 import           Prelude              hiding (print)
 import qualified Network.WebSockets   as WS
-import           Network.Wreq         as R
+import qualified Network.Wreq         as R
 import           Control.Lens         hiding ((.=))
 import           Control.Concurrent 
-import           Control.Exception    as E
+import qualified Control.Exception    as E
+import           Control.Monad.Catch  (Exception, MonadCatch, throwM)
 import           Control.Monad
 import           Control.Monad.Trans  (MonadIO(..))
 import           Data.Aeson.Lens
@@ -29,7 +30,7 @@ main = do
     _botParams <- getParams
     botParams <- case _botParams of
         Right p -> return p
-        Left err -> error err
+        Left err -> error $ show err
 
     -- a list of message outputters by oauthId so that
     -- webhooks can send messages back to the bot server
@@ -41,6 +42,13 @@ main = do
             case botParams ^? thisBots . traverse . filtered (\b -> b^.botId == id) of
                 Just bot -> return bot
                 Nothing -> W.next
+
+    --scopes that all bots will be granted
+    let botScopes = [
+                ("view_group" :: T.Text),
+                "send_notification",
+                "view_messages"
+            ]
 
     -- use botids as server address parts and
     -- provide the info hipchat wants
@@ -76,11 +84,7 @@ main = do
                     ],
                     "capabilities" .= object [
                         "hipchatApiConsumer" .= object [
-                            "scopes" .= [
-                                ("view_group" :: T.Text),
-                                "send_notification",
-                                "view_messages"
-                            ],
+                            "scopes" .= botScopes,
                             "fromName" .= bName
                         ],
                         "webhook" .= [
@@ -114,23 +118,26 @@ main = do
             -- we assume that the key will exist else we're a bit screwed anyway.
             caps <- liftIO $ R.get $ T.unpack (resp ^?! key "capabilitiesUrl" . _String)
 
-            let hipchatApiUrl = caps ^?! responseBody . key "capabilities" . key "hipchatApiProvider" . key "url" . _String
-                tokenUrl = caps ^?! responseBody . key "capabilities" . key "oauth2Provider" . key "tokenUrl" . _String
+            let hipchatApiUrl = caps ^?! R.responseBody . key "capabilities" . key "hipchatApiProvider" . key "url" . _String
+                tokenUrl = caps ^?! R.responseBody . key "capabilities" . key "oauth2Provider" . key "tokenUrl" . _String
 
-            printLn "Installing {}" (Only bot^.botName)
+            printLn "Installing {}" (Only $ bot^.botName)
 
             -- fork a thread to handle keeping the token refreshed
             authToken <- liftIO $ newEmptyMVar
             liftIO $ forkIO $ forever $ do
                 bFirst <- isEmptyMVar authToken
-                let opts = R.defaults & auth ?~ basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
+                let opts = R.defaults & R.auth ?~ R.basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
                 let gt = if bFirst then "client_credentials" else "refresh_token" :: T.Text
 
-                tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [ "grant_type" .= gt ]
-                putMVar authToken $ tokenDetails ^?! responseBody . key "access_token" . _String
+                tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [ 
+                        "grant_type" .= gt,
+                        "scope" .= botScopes
+                    ]
+                putMVar authToken $ tokenDetails ^?! R.responseBody . key "access_token" . _String
 
                 --sleep until we need to refresh token (give 2 mins leeway)
-                threadDelay $ ((tokenDetails ^?! responseBody . key "expires_in" . _Integral) - 120) * 1000000
+                threadDelay $ ((tokenDetails ^?! R.responseBody . key "expires_in" . _Integral) - 120) * 1000000
 
             --start a websocket client for our new bot:
             printLn "Starting socket server pointed at {}:{}" (bot^.botAddress, bot^.botPort)
@@ -150,7 +157,7 @@ main = do
                         printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
 
                         let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
-                        R.postWith (R.defaults & param "auth_token" .~ [auth]) url $ toJSON $ object [
+                        R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ object [
                                 "message" .= msg, 
                                 "notify" .= True
                             ]
@@ -197,8 +204,12 @@ main = do
 -- message passing. tries to reestablish link if its lost
 startSocketClient address port = liftIO $ do
 
+    --in_read reads messages we get back from the bot server
     (in_read :: IO BL.ByteString, in_write) <- makeChan
-    (out_read :: IO BL.ByteString, out_write) <- makeChan
+    --out_write is to send messages back to the bot server.
+    --if the bot server doesnt pick them up (eg disconnected)
+    --the messages are discarded.
+    (out_read :: IO BL.ByteString, out_write) <- makeExpiringChan 10000000
 
     let runConnection = WS.runClient address port "/" $ \conn -> do
             liftIO $ forkIO $ forever $ do
@@ -210,7 +221,7 @@ startSocketClient address port = liftIO $ do
 
         -- loop catching *any* (should limit scope more) exception and retrying.
         -- allows bots to be taken offline/tweaked without this program needing a restart.
-        connectionLoop = runConnection `E.catches` [ E.Handler $ \(err :: SomeException) -> handleError ]
+        connectionLoop = runConnection `E.catches` [ E.Handler $ \(err :: E.SomeException) -> handleError ]
           where
             handleError = do
                 printLn "connection issue with client at {}:{}, attempting reconnect in 10s" (address, port)
@@ -219,8 +230,6 @@ startSocketClient address port = liftIO $ do
 
     forkIO $ connectionLoop
 
-    --return means to read messages coming from socket,
-    --and write messages back to the socket
     return (in_read, out_write)
 
 

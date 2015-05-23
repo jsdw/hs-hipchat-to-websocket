@@ -22,215 +22,51 @@ import           Network.Wai.Middleware.RequestLogger
 import           App.GetParams
 import           App.Format           (print, printLn, formatLn, Only(..))
 import           App.Channel
-
+import           App.Views
+import           App.Types
 
 main = do
 
-    -- extract params from file:
+    -- extract config params from file:
     _botParams <- getParams
-    botParams <- case _botParams of
+    botParams' <- case _botParams of
         Right p -> return p
         Left err -> error $ show err
 
     -- a list of message outputters by oauthId so that
     -- webhooks can send messages back to the bot server
-    sendersByOauth <- newMVar []
+    oauthSenders' <- newMVar []
 
-    --key hold of a bot from within an ActionM
-    let lookupBot = do
-            id <- W.param "botid"
-            case botParams ^? thisBots . traverse . filtered (\b -> b^.botId == id) of
-                Just bot -> return bot
-                Nothing -> W.next
-
-    --scopes that all bots will be granted
-    let botScopes = [
-                ("view_group" :: T.Text),
-                "send_notification",
-                "view_messages"
-            ]
+    -- merge all shared params into a data object
+    let params = GlobalState botParams' oauthSenders'
 
     -- use botids as server address parts and
     -- provide the info hipchat wants
-    W.scotty (botParams^.thisPort) $ do
+    W.scotty (params^.botParams.thisPort) $ do
 
         W.middleware logStdoutDev
 
-        -- bot homepage
-        W.get "/:botid" $ do
+        --global homepage. list general info
+        W.get "/" $ homepageView params
 
-            bot <- lookupBot 
-            W.text $ formatLn "bot homepage reached for {}\n\nGo to /{}/capabilities for more" (bot^.botName, bot^.botId)
+        -- bot homepage
+        W.get "/:botid" $ botHomepageView params
 
         -- return the bot capabilities descriptor
         -- for each bot we listed in the config file
-        W.get "/:botid/capabilities" $ do
-
-            bot <- lookupBot 
-
-            let bName = bot^.botName
-                bId = bot^.botId
-                tPort = (T.pack $ show $ botParams^.thisPort)
-                tUrl = (botParams^.thisAddress) <> ":" <> tPort <> "/" <> bId
-
-            -- tell the world about our bot when we ask for its capabilities.
-            W.json $ object [ 
-                    "name" .= bName,
-                    "description" .= (bName <> ", Connected with HipchatToWebsocket"),
-                    "key" .= ("hipchat.to.websocket." <> bId),
-                    "links" .= object [
-                        "homepage" .= tUrl,
-                        "self" .= (tUrl <> "/capabilities")
-                    ],
-                    "capabilities" .= object [
-                        "hipchatApiConsumer" .= object [
-                            "scopes" .= botScopes,
-                            "fromName" .= bName
-                        ],
-                        "webhook" .= [
-                            object [
-                                "url" .= (tUrl <> "/webhook/room_message"),
-                                "event" .= ("room_message" :: T.Text)
-                            ]
-                        ],
-                        "installable" .= object [
-                            "callbackUrl" .= (tUrl <> "/install")
-                        ]
-                    ],
-                    "vendor" .= object [
-                        "url" .= ("https://github.com/jsdw/hs-hipchat-to-websocket" :: T.Text),
-                        "name" .= bName
-                    ]
-                ]
+        W.get "/:botid/capabilities" $ getCapabilitiesView params
 
         -- install bot, kicking off the cycle of regetting the auth token as needed
-        W.post "/:botid/install" $ do
-
-            bot <- lookupBot 
-            (resp :: Value) <- W.jsonData
-
-            -- use these to get auth token. also use oauthId to tie webhook messages to the right
-            -- subscriber incase multiple hipchats install the same bot.
-            let oauthId = resp ^?! key "oauthId" . _String
-                oauthSecret = resp ^?! key "oauthSecret" . _String
-
-            -- follow this link to get a URL to the hipchat API.
-            -- we assume that the key will exist else we're a bit screwed anyway.
-            caps <- liftIO $ R.get $ T.unpack (resp ^?! key "capabilitiesUrl" . _String)
-
-            let hipchatApiUrl = caps ^?! R.responseBody . key "capabilities" . key "hipchatApiProvider" . key "url" . _String
-                tokenUrl = caps ^?! R.responseBody . key "capabilities" . key "oauth2Provider" . key "tokenUrl" . _String
-
-            printLn "Installing {}" (Only $ bot^.botName)
-
-            -- fork a thread to handle keeping the token refreshed
-            authToken <- liftIO $ newEmptyMVar
-            liftIO $ forkIO $ forever $ do
-                bFirst <- isEmptyMVar authToken
-                let opts = R.defaults & R.auth ?~ R.basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
-                let gt = if bFirst then "client_credentials" else "refresh_token" :: T.Text
-
-                tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [ 
-                        "grant_type" .= gt,
-                        "scope" .= botScopes
-                    ]
-                putMVar authToken $ tokenDetails ^?! R.responseBody . key "access_token" . _String
-
-                --sleep until we need to refresh token (give 2 mins leeway)
-                threadDelay $ ((tokenDetails ^?! R.responseBody . key "expires_in" . _Integral) - 120) * 1000000
-
-            --start a websocket client for our new bot:
-            printLn "Starting socket server pointed at {}:{}" (bot^.botAddress, bot^.botPort)
-            (m_in,m_out) <- startSocketClient (T.unpack $ bot^.botAddress) (bot^.botPort)
-
-            --add sending mvar to list so that webhooks can use:
-            liftIO $ modifyMVar_ sendersByOauth $ \arr -> return ((oauthId,m_out):arr) 
-
-            --handle messages coming in here. expect room and message else ignore:
-            liftIO $ forkIO $ forever $ do
-                msgData <- m_in
-                auth <- readMVar authToken
-
-                case (msgData ^? key "message" . _String, msgData ^? key "room" . _String) of
-                    (Just msg, Just room) -> do
-
-                        printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
-
-                        let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
-                        R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ object [
-                                "message" .= msg, 
-                                "notify" .= True
-                            ]
-                        return ()   
-                    otherwise -> printLn "server_message received but not understood: {}" (Only msgData)
-
-                return ()
-
-
-            W.text "Thanks!"
+        W.post "/:botid/install" $ installBotView params
 
         -- receives messages sent to our bots.
-        W.post "/:botid/webhook/room_message" $ do
-
-            bot <- lookupBot 
-            (resp :: Value) <- W.jsonData
-
-            let oauthId = resp ^?! key "oauth_client_id" . _String
-                room = resp ^?! key "item" . key "room" . key "name" . _String
-                msg = resp ^?! key "item" . key "message" . key "message" . _String
-                -- this may not be present:
-                mMentionName = resp ^? key "item" . key "message" . key "from" . key "mention_name" . _String
-
-            printLn "room_message ({}): {} says {}" (room, mMentionName, msg)
-
-            -- lookup socket client by oauthId and send message to it if possible
-            senders <- liftIO $ readMVar sendersByOauth
-            liftIO $ case lookup oauthId senders of
-                Just m_out -> m_out $ encode $ object [
-                        "room" .= room,
-                        "message" .= msg,
-                        "name" .= mMentionName
-                    ]
-                otherwise -> printLn "Bot doesnt know about room with oauth ID '{}' (message: {})" (oauthId,msg)
-
-
-            W.text "Ooh, interesting room message!"
+        W.post "/:botid/webhook/room_message" $ webhookCallbackView params
 
 
     return ()
 
 
--- kick off a socket client, giving back mvars for
--- message passing. tries to reestablish link if its lost
-startSocketClient address port = liftIO $ do
 
-    --in_read reads messages we get back from the bot server
-    (in_read :: IO BL.ByteString, in_write) <- makeChan
-    --out_write is to send messages back to the bot server.
-    --if the bot server doesnt pick them up (eg disconnected)
-    --the messages are discarded.
-    (out_read :: IO BL.ByteString, out_write) <- makeExpiringChan 10000000
-
-    let runConnection = WS.runClient address port "/" $ \conn -> do
-            liftIO $ forkIO $ forever $ do
-                resp <- WS.receiveData conn
-                in_write resp
-            forever $ do
-                m <- out_read
-                WS.sendTextData conn m
-
-        -- loop catching *any* (should limit scope more) exception and retrying.
-        -- allows bots to be taken offline/tweaked without this program needing a restart.
-        connectionLoop = runConnection `E.catches` [ E.Handler $ \(err :: E.SomeException) -> handleError ]
-          where
-            handleError = do
-                printLn "connection issue with client at {}:{}, attempting reconnect in 10s" (address, port)
-                threadDelay 10000000
-                connectionLoop
-
-    forkIO $ connectionLoop
-
-    return (in_read, out_write)
 
 
 

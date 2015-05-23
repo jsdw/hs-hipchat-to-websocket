@@ -1,20 +1,7 @@
 module App.GetParams (
 
-    -- types
-    Params,
-    BotParams,
+    -- exception on failure
     ParamFailure,
-
-    -- param lenses
-    thisAddress,
-    thisPort,
-    thisBots,
-    thisLogLevel,
-
-    botName,
-    botId,
-    botAddress,
-    botPort,
 
     --get Params
     getParams
@@ -35,41 +22,7 @@ import           Data.Monoid          ((<>))
 import qualified Data.Map             as M
 
 import           App.ParseConf        (parseConf)
-
---
--- Params
---
-data BotParams = BotParams {
-    _botName :: T.Text,
-    _botId :: T.Text,
-    _botAddress :: T.Text,
-    _botPort :: Int
-} deriving (Show)
-makeLenses ''BotParams
-
-instance Default BotParams where
-    def = BotParams {
-        _botName = "",
-        _botId = "",
-        _botAddress = "",
-        _botPort = 0
-    }
-
-data Params = Params {
-    _thisAddress :: T.Text,
-    _thisPort :: Int,
-    _thisBots :: [BotParams],
-    _thisLogLevel :: Int
-} deriving (Show)
-makeLenses ''Params
-
-instance Default Params where
-    def = Params {
-        _thisAddress = "",
-        _thisPort = 0,
-        _thisBots = def,
-        _thisLogLevel = 0
-    }
+import           App.Types
 
 --
 -- A little quick error type to represent param extraction failure.

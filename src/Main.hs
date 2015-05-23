@@ -44,7 +44,7 @@ main = do
     -- provide the info hipchat wants
     W.scotty (params^.botParams.thisPort) $ do
 
-        W.middleware logStdoutDev
+        --W.middleware logStdoutDev
 
         --global homepage. list general info
         W.get "/" $ homepageView params

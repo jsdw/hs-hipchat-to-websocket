@@ -1,4 +1,5 @@
 module App.Views (
+    homepageView,
     botHomepageView,
     getCapabilitiesView,
     installBotView,
@@ -27,9 +28,20 @@ import           Data.List            (lookup)
 import           Network.Wai.Middleware.RequestLogger
 
 import           App.GetParams
-import           App.Format           (print, printLn, formatLn, Only(..))
+import           App.Format           (print, printLn, format, formatLn, Only(..))
 import           App.Channel
 import           App.Types
+
+--
+-- Global homepage
+--
+homepageView params = do
+    let bots = params ^.. botParams.thisBots.traverse
+    W.html $ mconcat $ flip fmap bots $ \b -> 
+        let url = format "http://{}:{}/{}/capabilities" 
+                  (params^.botParams.thisAddress, params^.botParams.thisPort, b^.botId)
+        in format "{} ({}:{}): <a href='{}'>{}</a><br/>" 
+           (b^.botName, b^.botAddress, b^.botPort, url, url)
 
 --
 -- Home page for bot
@@ -48,7 +60,7 @@ getCapabilitiesView params = do
     let bName = bot^.botName
         bId = bot^.botId
         tPort = (T.pack $ show $ params^.botParams.thisPort)
-        tUrl = (params^.botParams.thisAddress) <> ":" <> tPort <> "/" <> bId
+        tUrl = "http://" <> (params^.botParams.thisAddress) <> ":" <> tPort <> "/" <> bId
 
     -- tell the world about our bot when we ask for its capabilities.
     W.json $ object [ 
@@ -105,14 +117,14 @@ installBotView params = do
     -- fork a thread to handle keeping the token refreshed
     authToken <- liftIO $ newEmptyMVar
     liftIO $ forkIO $ forever $ do
-        bFirst <- isEmptyMVar authToken
+        mCurToken <- tryTakeMVar authToken
         let opts = R.defaults & R.auth ?~ R.basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
-        let gt = if bFirst then "client_credentials" else "refresh_token" :: T.Text
 
         tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [ 
-                "grant_type" .= gt,
+                "grant_type" .= ("client_credentials" :: T.Text),
                 "scope" .= botScopes
             ]
+
         putMVar authToken $ tokenDetails ^?! R.responseBody . key "access_token" . _String
 
         --sleep until we need to refresh token (give 2 mins leeway)

@@ -32,7 +32,10 @@ parseBlock = do
 parseId = let p = A.char '[' *> (A.takeWhile1 $ \c -> not (A.isEndOfLine c) && not (c == ']')) <* A.char ']'
           in p <?> "ID parsing (eg [name])"
 
-lineSep = (A.skipSpace >> parseComment >> A.skipSpace) <|> A.skipSpace
+lineSep = do
+    A.skipSpace
+    A.many' (parseComment >> A.skipSpace)
+    return ()
 
 parseComment = do
     A.string "#" <|> A.string ("-"<>"-")

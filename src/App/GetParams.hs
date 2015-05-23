@@ -20,6 +20,7 @@ import           Control.Monad.Catch  (Exception, MonadThrow, throwM, toExceptio
 import           Data.Default         (Default, def)
 import           Data.Monoid          ((<>))
 import qualified Data.Map             as M
+import           System.Environment   (getArgs)
 
 import           App.ParseConf        (parseConf)
 import           App.Types
@@ -42,8 +43,14 @@ paramError str = throwM $ toException $ ParamFailure str
 getParams :: MonadThrow m => IO (m Params)
 getParams = do
 
-    --read bots.conf as UTF8
-    conf <- fmap decodeUtf8 $ liftIO $ B.readFile "bots.conf" 
+    --where is config file?
+    args <- getArgs
+    let arg = case args of
+            [] -> "bots.conf"
+            (s:ss) -> s
+
+    --read config file as UTF8 and extract params from it
+    conf <- fmap decodeUtf8 $ liftIO $ B.readFile arg 
     return $ getParams' conf
 
 

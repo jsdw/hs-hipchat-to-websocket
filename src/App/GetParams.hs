@@ -83,11 +83,18 @@ getParams' conf = do
         _bColour <- getParamDef "colour" params "yellow"
         let bColour = toColour _bColour 
 
+        _bNotify <- getParamDef "notify" params "no"
+        let bNotify = case T.toLower _bNotify of
+                "yes" -> True
+                "true" -> True
+                _ -> False
+
         return $ def & botId .~ bId
                      & botName .~ bName
                      & botAddress .~ bAddress
                      & botPort .~ bPort
                      & botColour .~ bColour
+                     & botNotify .~ bNotify
 
     return $ def & thisAddress .~ tAddress
                  & thisPort .~ tPort

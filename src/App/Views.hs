@@ -148,7 +148,7 @@ installBotView params = do
                 let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
                     postMsg = object [
                             "message" .= msg, 
-                            "notify" .= False,
+                            "notify" .= (bot^.botNotify),
                             "color" .= (bot^.botColour)
                         ]
                     doPost = void $ R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ postMsg

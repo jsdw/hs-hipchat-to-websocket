@@ -19,8 +19,11 @@ name     Example Bot
 address  127.0.0.1
 -- port for bots websocket server
 port     9090
--- message colour
-colour   random
+-- message colour (optional, default false)
+colour   yellow
+-- notify people on message (optional, default false)
+notify   false
+
 ```
 
 Global settings come first; the address and port of the adapter (which hipchat must be able to see). Next, we define as many bots as we like by using the `[botid]` heading, which should be a unique (to this config file) bot ID, and then some bot details, including the address and port of the, bot's websocket server (which must be reachable from this program), the name of the bot as you'd like it to appear in hipchat, and the colour that its messages will be (one of yellow | green | red | purple | grey | random).
@@ -39,4 +42,4 @@ The program sends messages to each bot in the config file when they are received
 
 The response from the chat bot is expected to include a room name and message text, which is then relayed on to hipchat.
 
-Bot's can be restarted at will and this program should automatically reconnect them when they reappear (so long as they are on the same address/port!). This program however is stateless and if restarted will not remember the necessary information to continue serving existing bot installations, and so bots will need to be re-installed in hipchat in that event.
+Bots can be restarted at will and this program should automatically reconnect them when they reappear (so long as they are on the same address/port!). This program however is stateless and if restarted will not remember the necessary information to continue serving existing bot installations, and so bots will need to be re-installed in hipchat in that event.

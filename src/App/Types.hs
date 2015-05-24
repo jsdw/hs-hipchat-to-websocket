@@ -16,6 +16,7 @@ module App.Types (
     botAddress,
     botPort,
     botColour,
+    botNotify,
 
     GlobalState(GlobalState),
     botParams,
@@ -62,6 +63,7 @@ instance ToJSON BotColour where
 data BotParams = BotParams {
     _botName :: Text,
     _botColour :: BotColour,
+    _botNotify :: Bool,
     _botId :: Text,
     _botAddress :: Text,
     _botPort :: Int
@@ -72,6 +74,7 @@ instance Default BotParams where
     def = BotParams {
         _botName = "",
         _botColour = Yellow,
+        _botNotify = False,
         _botId = "",
         _botAddress = "",
         _botPort = 0

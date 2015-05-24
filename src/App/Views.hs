@@ -9,10 +9,11 @@ module App.Views (
 import           Prelude              hiding (print)
 import qualified Network.WebSockets   as WS
 import qualified Network.Wreq         as R
+import           Network.HTTP.Client  (HttpException(..))
 import           Control.Lens         hiding ((.=))
 import           Control.Concurrent 
 import qualified Control.Exception    as E
-import           Control.Monad.Catch  (Exception, MonadCatch, throwM)
+import           Control.Monad.Catch  (Exception, MonadCatch, throwM, catch)
 import           Control.Monad
 import           Control.Monad.Trans  (MonadIO(..))
 import           Data.Aeson.Lens
@@ -142,18 +143,21 @@ installBotView params = do
         msgData <- m_in
         auth <- readMVar authToken
 
-        case (msgData ^? key "message" . _String, msgData ^? key "room" . _String) of
-            (Just msg, Just room) -> do
-
+        let postMessage msg room = do
                 printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
-
                 let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
-                R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ object [
-                        "message" .= msg, 
-                        "notify" .= True,
-                        "color" .= (bot^.botColour)
-                    ]
+                    postMsg = object [
+                            "message" .= msg, 
+                            "notify" .= False,
+                            "color" .= (bot^.botColour)
+                        ]
+                    doPost = void $ R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ postMsg
+                doPost `catch` \(err :: HttpException) -> 
+                    void $ printLn "Error sending message: {}" (Only $ show err)
                 return ()   
+
+        case (msgData ^? key "message" . _String, msgData ^? key "room" . _String) of
+            (Just msg, Just room) -> postMessage msg room
             otherwise -> printLn "server_message received but not understood: {}" (Only msgData)
 
         return ()

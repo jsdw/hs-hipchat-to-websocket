@@ -33,6 +33,7 @@ executable HipchatToWebsocket
                        data-default == 0.5.*,
                        transformers == 0.4.3.*,
                        wreq-sb == 0.4.*,
+                       http-client == 0.4.*,
                        wai-extra == 3.0.7.*,
                        attoparsec == 0.12.*,
                        scotty == 0.9.*,

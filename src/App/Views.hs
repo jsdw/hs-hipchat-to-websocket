@@ -186,7 +186,6 @@ webhookCallbackView params = do
             ]
         otherwise -> printLn "Bot doesnt know about room with oauth ID '{}' (message: {})" (oauthId,msg)
 
-
     W.text "Ooh, interesting room message!"
 
 --

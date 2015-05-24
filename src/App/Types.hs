@@ -53,7 +53,6 @@ fromColour Purple = "purple"
 fromColour Grey = "grey"
 fromColour Random = "random"
 
-
 instance ToJSON BotColour where
     toJSON c = String $ fromColour c
 

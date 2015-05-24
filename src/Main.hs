@@ -1,27 +1,10 @@
-import           Prelude              hiding (print)
-import qualified Network.WebSockets   as WS
-import qualified Network.Wreq         as R
-import           Control.Lens         hiding ((.=))
-import           Control.Concurrent 
-import qualified Control.Exception    as E
-import           Control.Monad.Catch  (Exception, MonadCatch, throwM)
-import           Control.Monad
-import           Control.Monad.Trans  (MonadIO(..))
-import           Data.Aeson.Lens
-import           Data.Aeson           ((.=),object,Value,toJSON,encode)
-import qualified Web.Scotty           as W
-import qualified Data.Text            as T
-import qualified Data.Text.IO         as T
-import qualified Data.ByteString.Lazy as BL
-import           Data.Text.Lazy       (fromStrict)
-import           Data.Text.Encoding   (encodeUtf8)
-import           Data.Monoid
-import           Data.List            (lookup)
+
+import           Control.Concurrent.MVar
+import           Control.Lens                          hiding ((.=))
+import qualified Web.Scotty                            as W
 import           Network.Wai.Middleware.RequestLogger
 
 import           App.GetParams
-import           App.Format           (print, printLn, formatLn, Only(..))
-import           App.Channel
 import           App.Views
 import           App.Types
 

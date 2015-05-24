@@ -37,7 +37,7 @@ name     Example Bot
 address  127.0.0.1
 -- port for bots websocket server
 port     9090
--- message colour (optional, default false)
+-- message colour (optional, default yellow)
 colour   yellow
 -- notify people on message (optional, default false)
 notify   false

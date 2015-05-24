@@ -150,7 +150,8 @@ installBotView params = do
                 let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
                 R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ object [
                         "message" .= msg, 
-                        "notify" .= True
+                        "notify" .= True,
+                        "color" .= (bot^.botColour)
                     ]
                 return ()   
             otherwise -> printLn "server_message received but not understood: {}" (Only msgData)
@@ -181,7 +182,7 @@ webhookCallbackView params = do
         Just m_out -> m_out $ encode $ object [
                 "room" .= room,
                 "message" .= msg,
-                "name" .= mMentionName
+                "name" .= fmap ("@"<>) mMentionName
             ]
         otherwise -> printLn "Bot doesnt know about room with oauth ID '{}' (message: {})" (oauthId,msg)
 

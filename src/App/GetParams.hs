@@ -80,10 +80,14 @@ getParams' conf = do
         _bPort <- getParam "port" params ("port for bot " <> T.unpack bId <> " not found")
         bPort <- toInt _bPort ("port for bot " <> T.unpack bId <> " not a number")
 
+        _bColour <- getParamDef "colour" params "yellow"
+        let bColour = toColour _bColour 
+
         return $ def & botId .~ bId
                      & botName .~ bName
                      & botAddress .~ bAddress
                      & botPort .~ bPort
+                     & botColour .~ bColour
 
     return $ def & thisAddress .~ tAddress
                  & thisPort .~ tPort

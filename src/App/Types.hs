@@ -1,5 +1,9 @@
 module App.Types (
 
+    BotColour(..),
+    toColour,
+    fromColour,
+
     Params,
     thisAddress,
     thisPort,
@@ -11,6 +15,7 @@ module App.Types (
     botId,
     botAddress,
     botPort,
+    botColour,
 
     GlobalState(GlobalState),
     botParams,
@@ -23,12 +28,41 @@ import           Data.Default         (Default(..))
 import           Control.Lens
 import           Control.Concurrent   (MVar)
 import           Data.Text            (Text)
+import           Data.Aeson           (ToJSON(..), Value(..))
+import           Data.String          (IsString)
+
+--
+-- Message colour
+--
+data BotColour = Yellow | Green | Red | Purple | Grey | Random deriving Show
+
+toColour :: Text -> BotColour
+toColour "yellow" = Yellow
+toColour "green" = Green
+toColour "red" = Red
+toColour "purple" = Purple
+toColour "grey" = Grey
+toColour "random" = Random
+toColour _ = Yellow 
+
+fromColour :: BotColour -> Text
+fromColour Yellow = "yellow"
+fromColour Green = "green"
+fromColour Red = "red"
+fromColour Purple = "purple"
+fromColour Grey = "grey"
+fromColour Random = "random"
+
+
+instance ToJSON BotColour where
+    toJSON c = String $ fromColour c
 
 --
 -- Params for one bot
 --
 data BotParams = BotParams {
     _botName :: Text,
+    _botColour :: BotColour,
     _botId :: Text,
     _botAddress :: Text,
     _botPort :: Int
@@ -38,6 +72,7 @@ makeLenses ''BotParams
 instance Default BotParams where
     def = BotParams {
         _botName = "",
+        _botColour = Yellow,
         _botId = "",
         _botAddress = "",
         _botPort = 0

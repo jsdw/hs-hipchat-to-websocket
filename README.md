@@ -1,6 +1,6 @@
 # What is it?
 
-An adaptor which makes it easy to connect a websocket based chat bot (using JSON) with Hipchats APIV2. Its primary use is for bypassing the cruft of interfacing with Hipchat. Instead, write your chat bot (or other chat service) in the form of a websocket server using a basic JSON protocol for sending/receiving messages, and let this program do the heavy lifting of talking back and forth with hipchat and being "installable" etc.
+An adaptor which makes it easy to connect a websocket based chat bot (using JSON) with Hipchats APIV2. Its primary use is for bypassing the cruft of interfacing with Hipchat. Instead, write your chat bot (or other chat service) in the form of a websocket server using a basic JSON protocol for sending/receiving messages, and let this program do the heavy lifting of talking back and forth with hipchat and being "installable" as a hipchat integration and reauthenticating as necessary.
 
 # Installation
 
@@ -60,6 +60,13 @@ The program sends messages to each bot in the config file that is present in the
 }
 ```
 
-The response from the chat bot is expected to include a room name and message text, which is then relayed on to hipchat.
+The response from the chat bot is expected to include a room name and message text, which is then relayed on to hipchat. For example:
+
+```
+{
+	"room": "SomeRoom",
+	"message": "response to message"
+}
+```
 
 Bots can be restarted at will and this program should automatically reconnect them when they reappear (so long as they are on the same address/port!). This program however is stateless and if restarted will not remember the necessary information to continue serving existing bot installations, and so bots will need to be re-installed in hipchat in that event.

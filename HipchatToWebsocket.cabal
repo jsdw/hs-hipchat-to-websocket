@@ -8,7 +8,7 @@ synopsis:            Converts between hipchats APIV2 and websocket protocol
 homepage:            http://unbui.lt
 license:             PublicDomain
 author:              James Wilson
-maintainer:          jammyw@gmail.com
+maintainer:          me@unbui.lt
 category:            Web
 build-type:          Simple
 cabal-version:       >=1.10

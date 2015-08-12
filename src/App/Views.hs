@@ -11,11 +11,12 @@ import qualified Network.WebSockets   as WS
 import qualified Network.Wreq         as R
 import           Network.HTTP.Client  (HttpException(..))
 import           Control.Lens         hiding ((.=))
-import           Control.Concurrent 
+import           Control.Concurrent
 import qualified Control.Exception    as E
 import           Control.Monad.Catch  (Exception, MonadCatch, throwM, catch)
 import           Control.Monad
 import           Control.Monad.Trans  (MonadIO(..))
+import           Control.Applicative
 import           Data.Aeson.Lens
 import           Data.Aeson           ((.=),object,Value,toJSON,encode)
 import qualified Web.Scotty           as W
@@ -38,10 +39,10 @@ import           App.Types
 --
 homepageView params = do
     let bots = params ^.. botParams.thisBots.traverse
-    W.html $ mconcat $ flip fmap bots $ \b -> 
-        let url = format "http://{}:{}/{}/capabilities" 
+    W.html $ mconcat $ flip fmap bots $ \b ->
+        let url = format "http://{}:{}/{}/capabilities"
                   (params^.botParams.thisAddress, params^.botParams.thisPort, b^.botId)
-        in format "{} ({}:{}): <a href='{}'>{}</a><br/>" 
+        in format "{} ({}:{}): <a href='{}'>{}</a><br/>"
            (b^.botName, b^.botAddress, b^.botPort, url, url)
 
 --
@@ -64,7 +65,7 @@ getCapabilitiesView params = do
         tUrl = "http://" <> (params^.botParams.thisAddress) <> ":" <> tPort <> "/" <> bId
 
     -- tell the world about our bot when we ask for its capabilities.
-    W.json $ object [ 
+    W.json $ object [
             "name" .= bName,
             "description" .= (bName <> ", Connected with HipchatToWebsocket"),
             "key" .= ("hipchat.to.websocket." <> bId),
@@ -121,7 +122,7 @@ installBotView params = do
         mCurToken <- tryTakeMVar authToken
         let opts = R.defaults & R.auth ?~ R.basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
 
-        tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [ 
+        tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [
                 "grant_type" .= ("client_credentials" :: T.Text),
                 "scope" .= botScopes
             ]
@@ -136,7 +137,7 @@ installBotView params = do
     (m_in,m_out) <- startSocketClient (T.unpack $ bot^.botAddress) (bot^.botPort)
 
     --add sending mvar to list so that webhooks can use:
-    liftIO $ modifyMVar_ (params^.oauthSenders) $ \arr -> return ((oauthId,m_out):arr) 
+    liftIO $ modifyMVar_ (params^.oauthSenders) $ \arr -> return ((oauthId,m_out):arr)
 
     --handle messages coming in here. expect room and message else ignore:
     liftIO $ forkIO $ forever $ do
@@ -147,14 +148,16 @@ installBotView params = do
                 printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
                 let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
                     postMsg = object [
-                            "message" .= msg, 
+                            "message" .= msg,
                             "notify" .= (bot^.botNotify),
-                            "color" .= (bot^.botColour)
+                            "color" .= case (msgData ^? key "colour") of
+                                Just c  -> toJSON c
+                                Nothing -> toJSON (bot^.botColour)
                         ]
                     doPost = void $ R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ postMsg
-                doPost `catch` \(err :: HttpException) -> 
+                doPost `catch` \(err :: HttpException) ->
                     void $ printLn "Error sending message: {}" (Only $ show err)
-                return ()   
+                return ()
 
         case (msgData ^? key "message" . _String, msgData ^? key "room" . _String) of
             (Just msg, Just room) -> postMessage msg room

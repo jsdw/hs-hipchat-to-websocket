@@ -151,7 +151,7 @@ installBotView params = do
                             "message" .= msg,
                             "message_format" .= ("text" :: String),
                             "notify" .= (bot^.botNotify),
-                            "color" .= case (msgData ^? key "colour") of
+                            "color" .= case (msgData ^? key "colour" . _String) of
                                 Just c  -> toJSON c
                                 Nothing -> toJSON (bot^.botColour)
                         ]

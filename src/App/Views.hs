@@ -60,9 +60,9 @@ getCapabilitiesView params = do
     bot <- lookupBot params
 
     let bName = bot^.botName
-        bId = bot^.botId
+        bId   = bot^.botId
         tPort = (T.pack $ show $ params^.botParams.thisPort)
-        tUrl = "http://" <> (params^.botParams.thisAddress) <> ":" <> tPort <> "/" <> bId
+        tUrl  = "http://" <> (params^.botParams.thisAddress) <> ":" <> tPort <> "/" <> bId
 
     -- tell the world about our bot when we ask for its capabilities.
     W.json $ object [
@@ -104,15 +104,16 @@ installBotView params = do
 
     -- use these to get auth token. also use oauthId to tie webhook messages to the right
     -- subscriber incase multiple hipchats install the same bot.
-    let oauthId = resp ^?! key "oauthId" . _String
+    let oauthId     = resp ^?! key "oauthId" . _String
         oauthSecret = resp ^?! key "oauthSecret" . _String
 
     -- follow this link to get a URL to the hipchat API.
     -- we assume that the key will exist else we're a bit screwed anyway.
     caps <- liftIO $ R.get $ T.unpack (resp ^?! key "capabilitiesUrl" . _String)
 
-    let hipchatApiUrl = caps ^?! R.responseBody . key "capabilities" . key "hipchatApiProvider" . key "url" . _String
-        tokenUrl = caps ^?! R.responseBody . key "capabilities" . key "oauth2Provider" . key "tokenUrl" . _String
+    let capsLens      = R.responseBody . key "capabilities"
+        hipchatApiUrl = caps ^?! capsLens . key "hipchatApiProvider" . key "url" . _String
+        tokenUrl      = caps ^?! capsLens . key "oauth2Provider" . key "tokenUrl" . _String
 
     printLn "Installing {}" (Only $ bot^.botName)
 
@@ -122,9 +123,9 @@ installBotView params = do
         mCurToken <- tryTakeMVar authToken
         let opts = R.defaults & R.auth ?~ R.basicAuth (encodeUtf8 oauthId) (encodeUtf8 oauthSecret)
 
-        tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object [
-                "grant_type" .= ("client_credentials" :: T.Text),
-                "scope" .= botScopes
+        tokenDetails <- R.postWith opts (T.unpack tokenUrl) $ toJSON $ object
+            [ "grant_type" .= ("client_credentials" :: T.Text)
+            , "scope"      .= botScopes
             ]
 
         putMVar authToken $ tokenDetails ^?! R.responseBody . key "access_token" . _String
@@ -147,13 +148,11 @@ installBotView params = do
         let postMessage msg room = do
                 printLn "server_message ({}): {} says {}" (room, bot^.botName, msg)
                 let url = T.unpack hipchatApiUrl <> "room/" <> T.unpack room <> "/notification"
-                    postMsg = object [
-                            "message" .= msg,
-                            "message_format" .= ("text" :: String),
-                            "notify" .= (bot^.botNotify),
-                            "color" .= case (msgData ^? key "colour" . _String) of
-                                Just c  -> toJSON c
-                                Nothing -> toJSON (bot^.botColour)
+                    postMsg = object 
+                        [ "message"        .= msg
+                        , "message_format" .= maybe (toJSON ("text" :: String)) toJSON (msgData ^? key "message_format" . _String)
+                        , "notify"         .= (bot^.botNotify)
+                        , "color"          .= maybe (toJSON (bot^.botColour)) toJSON (msgData ^? key "colour" . _String)
                         ]
                     doPost = void $ R.postWith (R.defaults & R.param "auth_token" .~ [auth]) url $ toJSON $ postMsg
                 doPost `catch` \(err :: HttpException) ->
@@ -187,10 +186,10 @@ webhookCallbackView params = do
     -- lookup socket client by oauthId and send message to it if possible
     senders <- liftIO $ readMVar (params^.oauthSenders)
     liftIO $ case lookup oauthId senders of
-        Just m_out -> m_out $ encode $ object [
-                "room" .= room,
-                "message" .= msg,
-                "name" .= fmap ("@"<>) mMentionName
+        Just m_out -> m_out $ encode $ object
+            [ "room" .= room
+            , "message" .= msg
+            , "name" .= fmap ("@"<>) mMentionName
             ]
         otherwise -> printLn "Bot doesnt know about room with oauth ID '{}' (message: {})" (oauthId,msg)
 
@@ -240,9 +239,8 @@ lookupBot params = do
         Nothing -> W.next
 
 --scopes that all bots will be granted
-botScopes = [
-        ("view_group" :: T.Text),
-        "send_notification",
-        "view_messages"
+botScopes =
+    [ ("view_group" :: T.Text)
+    , "send_notification"
+    , "view_messages"
     ]
-

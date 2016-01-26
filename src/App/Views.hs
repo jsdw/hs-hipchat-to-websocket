@@ -210,24 +210,30 @@ startSocketClient address port = liftIO $ do
     --the messages are discarded.
     (out_read :: IO BL.ByteString, out_write) <- makeExpiringChan 10000000
 
-    let runConnection = WS.runClient address port "/" $ \conn -> do
-            liftIO $ forkIO $ forever $ do
-                resp <- WS.receiveData conn
-                in_write resp
-            forever $ do
-                m <- out_read
-                WS.sendTextData conn m
+    let connectionLoop = WS.runClient address port "/" $ \conn -> do
+            printLn "Connection established to {}:{}" (address, port)
+            tid <- myThreadId
+            tid0 <- liftIO $ forkIO $ forever $ sender conn tid
+            e <- E.try $ forever $ receiver conn
+            case e of
+                Left (_ :: E.SomeException) -> E.throwTo tid0 E.ThreadKilled
+                Right _ -> return ()
 
-        -- loop catching *any* (should limit scope more) exception and retrying.
-        -- allows bots to be taken offline/tweaked without this program needing a restart.
-        connectionLoop = runConnection `E.catches` [ E.Handler $ \(err :: E.SomeException) -> handleError ]
-          where
-            handleError = do
-                printLn "connection issue with client at {}:{}, attempting reconnect in 10s" (address, port)
-                threadDelay 10000000
-                connectionLoop
+        sender conn parentThreadId = do
+            m <- out_read
+            WS.sendTextData conn m `E.catch` \(e :: E.SomeException) -> E.throwTo parentThreadId e
 
-    forkIO $ connectionLoop
+        receiver conn = do
+            resp <- WS.receiveData conn
+            in_write resp
+
+        tryAgainSoon = do
+            printLn "connection issue with client at {}:{}, attempting reconnect in 10s" (address, port)
+            threadDelay 10000000
+
+    forkIO $ forever $
+        let errLoop = connectionLoop `E.catch` \(e :: E.SomeException) -> tryAgainSoon >> errLoop
+        in errLoop
 
     return (in_read, out_write)
 
